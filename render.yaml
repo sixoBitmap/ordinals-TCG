@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: ordinal-cards
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      # ordinals.com blocks/rate-limits datacenter IPs (Render included) —
+      # route all recursive/content reads through Xverse's ord gateway
+      - key: ORD_GATEWAY
+        value: https://ord.xverse.app

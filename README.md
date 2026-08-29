@@ -36,10 +36,17 @@ also work as two players.
 
 ## Deploy (to play with others)
 
-Any Node host works — `node server.js`, `PORT` env respected, zero deps.
-One caveat: ordinals.com rate-limits/blocks some datacenter IPs (Render,
-etc.). If cards fail to load when hosted, point the server at another
-ord-compatible gateway: `ORD_GATEWAY=https://ord.xverse.app`.
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/sixoBitmap/ordinals-TCG)
+
+One click via the included `render.yaml` (free plan): it starts
+`node server.js` with `ORD_GATEWAY=https://ord.xverse.app` — needed because
+ordinals.com rate-limits/blocks datacenter IPs like Render's. Free instances
+sleep when idle (first visit takes ~1 min to wake), and matches live in
+memory, so a restart clears any game in progress.
+
+Any other Node ≥18 host works the same way — `node server.js`, `PORT` env
+respected, zero deps. Keep it a single instance: matchmaking state is
+in-memory.
 
 ## Data
 
