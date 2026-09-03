@@ -59,6 +59,7 @@ function showInfo() {
   section("FIXED", INFO_PERM);
   section("CAN CHANGE", INFO_MUT);
   sh.appendChild(el(`<div class="dirs">▲ HIGHEST WINS · ▼ LOWEST WINS</div>`));
+  sh.onclick = (e) => e.stopPropagation();  // scrolling/tapping the sheet must not dismiss it
   o.appendChild(sh);
   o.onclick = () => o.remove();
   document.body.appendChild(o);
@@ -443,6 +444,9 @@ function showOver(v) {
 }
 
 // ------------------------------------------------------------------ boot
+
+// iOS WebKit only fires :active on touch when a touchstart listener exists
+document.addEventListener("touchstart", () => { }, { passive: true });
 
 if (addr) { restoreSel(); startES(); showDeck(); loadWallet(); }
 else showConnect();

@@ -1,10 +1,12 @@
 {
   "name": "ordinals-tcg",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "type": "module",
   "private": true,
   "engines": { "node": ">=18" },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test test/",
+    "build-scale": "node scripts/build-scale.mjs --sample 3000 --concurrency 1 --gap 400"
   }
 }
