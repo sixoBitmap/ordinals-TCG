@@ -1,6 +1,6 @@
 {
   "name": "ordinals-tcg",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "type": "module",
   "private": true,
   "engines": { "node": ">=18" },

@@ -214,6 +214,61 @@ input:focus { border-color: var(--teal); box-shadow: var(--glow-teal); }
 .irow span { color: var(--dim); letter-spacing: .04em; }
 .dirs { padding-top: 14px; font-size: 12px; font-weight: 700; letter-spacing: .18em; text-align: center; color: var(--pink); }
 
+/* ---- mode switch (deck builder) ---- */
+.modes { display: flex; border-bottom: 1px solid var(--line); background: rgba(9, 9, 13, .5); }
+.mode { flex: 1; text-align: center; padding: 9px 0; font-size: 11px; font-weight: 700; letter-spacing: .32em; color: var(--dim); cursor: pointer; transition: color .18s; }
+.mode.on { color: var(--gold); box-shadow: inset 0 -2px 0 var(--gold); text-shadow: 0 0 12px rgba(255, 207, 90, .5); }
+
+/* ---- battle card face ---- */
+.chead { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+.type { font-style: normal; font-size: 8px; font-weight: 700; letter-spacing: .1em; padding: 1px 5px; border-radius: 6px; color: var(--ink); }
+.type.IMAGE { background: var(--pink); }
+.type.TEXT { background: var(--gold); }
+.type.CODE { background: var(--teal); }
+.stats.battle .srow { align-items: center; gap: 6px; }
+.stats.battle .srow span { width: 24px; }
+.stats.battle .srow > b { min-width: 26px; text-align: right; }
+.sbar { flex: 1; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.sbar b { display: block; height: 100%; background: linear-gradient(90deg, var(--teal), var(--pink)); border-radius: 2px; transition: width .4s ease; }
+.srow.hp .sbar b { background: var(--green); }
+.tier { font-size: 9px; font-weight: 700; letter-spacing: .24em; text-align: center; padding-top: 4px; color: var(--dim); }
+.tier.RARE { color: var(--text); }
+.tier.EPIC { color: var(--teal); text-shadow: 0 0 10px rgba(46, 230, 197, .5); }
+.tier.LEGENDARY { color: var(--pink); text-shadow: 0 0 10px rgba(255, 95, 168, .6); }
+.tier.GOD { color: var(--gold); text-shadow: var(--glow-gold); }
+.raw { font-size: 8px; color: var(--dim); text-align: center; letter-spacing: .06em; padding-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- battle arena: opponent | effects | you, side by side so both actives
+   fit above the bench without scrolling on a phone ---- */
+.stage.arena { flex-direction: row; align-items: center; justify-content: center; gap: 6px; }
+.stage.arena::before, .stage.arena::after { display: none; }
+.zone { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 132px; flex: 0 0 auto; }
+.zone .card { width: 100%; cursor: default; }
+.zone.opp .card { border-color: rgba(255, 95, 168, .5); }
+.zone.you .card { border-color: rgba(46, 230, 197, .5); }
+.zinfo { font-size: 10px; color: var(--dim); letter-spacing: .2em; }
+.hpwrap { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.hpbar { width: 100%; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.hpbar b { display: block; height: 100%; background: var(--green); border-radius: 4px; transition: width .5s ease; box-shadow: 0 0 10px rgba(62, 227, 138, .5); }
+.hpbar b.low { background: var(--red); box-shadow: 0 0 10px rgba(255, 84, 112, .6); }
+.hpnum { font-size: 11px; font-weight: 700; color: var(--dim); letter-spacing: .1em; }
+.fx { flex: 1 1 60px; min-width: 60px; min-height: 34px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; }
+.dmg { font-size: 28px; font-weight: 700; color: var(--gold); text-shadow: 0 0 18px rgba(255, 207, 90, .6); animation: floatUp 1s ease-out both; }
+.dmg i { font-style: normal; font-size: 13px; color: var(--pink); margin-left: 4px; }
+.dmg.opp { color: var(--red); text-shadow: 0 0 18px rgba(255, 84, 112, .6); }
+.ko { font-size: 22px; font-weight: 700; letter-spacing: .3em; color: var(--red); text-shadow: 0 0 20px rgba(255, 84, 112, .7); animation: pop .4s cubic-bezier(.2, .9, .3, 1.4) both; }
+.note { font-size: 12px; font-weight: 700; letter-spacing: .3em; color: var(--dim); animation: pop .3s ease-out both; }
+@keyframes floatUp { from { transform: translateY(10px); opacity: 0; } 25% { opacity: 1; } 70% { opacity: 1; } to { transform: translateY(-14px); opacity: 0; } }
+@keyframes shake { 0%, 100% { transform: none; } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+.shake { animation: shake .35s ease-in-out; }
+.actions { display: flex; gap: 10px; padding: 8px 14px 0; }
+.actions button { flex: 1; min-height: 48px; padding: 0; }
+.actions .swp.on { border-color: var(--gold); color: var(--gold); box-shadow: var(--glow-gold); }
+.pips { letter-spacing: .12em; font-size: 15px; }
+.pips.opp { color: var(--pink); text-shadow: 0 0 10px rgba(255, 95, 168, .5); }
+.pips.you { color: var(--teal); text-shadow: 0 0 10px rgba(46, 230, 197, .5); }
+.foot { padding-top: 12px; font-size: 9px; color: var(--dim); letter-spacing: .2em; text-align: center; }
+
 /* ---- small / short screens ---- */
 @media (max-height: 720px) {
   .gtop { padding: 8px 14px; }
@@ -223,10 +278,16 @@ input:focus { border-color: var(--teal); box-shadow: var(--glow-teal); }
   .hand .thumb { aspect-ratio: 16/10; }
   .duel .side { width: 112px; }
 }
+@media (max-height: 720px) {
+  .zone { width: 112px; }
+}
 @media (max-height: 560px) {
   .hand .thumb { display: none; }   /* landscape phones: stats-only hand */
   .minicard { display: none; }
   .gtop .score { font-size: 18px; }
+  .zone { width: 96px; }
+  .zone .thumb { display: none; }
+  .zone .raw, .zone .tier { display: none; }
 }
 @media (max-width: 350px) {
   .srow { font-size: 9px; }

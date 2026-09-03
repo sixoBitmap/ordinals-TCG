@@ -13,11 +13,18 @@ import { readFileSync, existsSync } from "node:fs";
 import { join, dirname, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
+import { battleStats, loadScale } from "./stats.js";
+import * as battle from "./battle.js";
 
 const PORT = Number(process.env.PORT || 8741);
 const ORD = (process.env.ORD_GATEWAY || "https://ordinals.com").replace(/\/$/, "");
 const XVERSE_API = (process.env.XVERSE_API || "https://api-3.xverse.app").replace(/\/$/, "");
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "public");
+const APP_ROOT = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(APP_ROOT, "public");
+
+// percentile scale for HP/ATK/DEF — sampled once by scripts/build-scale.mjs
+const SCALE = loadScale(join(APP_ROOT, "scale-v1.json"));
+console.log(`scale v${SCALE.version} (${SCALE.method}, ${SCALE.sampleSize} sampled)`);
 
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; ordinal-cards) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
@@ -25,8 +32,8 @@ const HEADERS = {
 };
 
 const DECK_MIN = 3, DECK_MAX = 20;
-const HAND_SIZE = 3;
-const TURN_MS = 60_000;      // auto-play after this so a match can never hang
+const HAND_SIZE = 3;         // STATS mode hand
+const TURN_MS = Number(process.env.TURN_MS) || 60_000;   // auto-play after this so a match can never hang
 const REVEAL_MS = 3200;
 const GONE_MS = 25_000;      // disconnected this long mid-game → forfeit
 const WALLET_MAX = 120;      // cap inscriptions listed per wallet
@@ -154,6 +161,7 @@ async function getCard(id) {
         children,
         reinsc: Math.max(0, satTotal - 1),
         content_type: m.content_type || "",
+        ...battleStats(m, SCALE),   // hp/hpMax/atk/def/type/tier/pct for BATTLE mode
       };
     } catch { /* not json → null */ }
   }
@@ -193,9 +201,11 @@ async function addrInscriptions(addr) {
 
 // ------------------------------------------------------------ players/games
 
-const players = new Map(); // pid → {pid, name, res, lastSeen, gameId, inQueue}
-const queue = [];          // pids waiting for a match
+const players = new Map(); // pid → {pid, name, streams, lastSeen, gameId, inQueue, mode, deckIds}
+const queues = { battle: [], stats: [] };   // pids waiting for a match, per game mode
 const games = new Map();   // gameId → game
+const modeOf = (m) => (m === "stats" ? "stats" : "battle");
+const queueOf = (p) => queues[modeOf(p.mode)];
 
 // names end up in the opponent's DOM — whitelist hard, never trust the client
 const cleanName = (s) => String(s || "").replace(/[^\w.…-]/g, "").slice(0, 24) || "?";
@@ -224,19 +234,20 @@ function shuffle(a) {
 }
 
 function tryMatch() {
-  while (queue.length >= 2) {
-    // random pairing, per the spec — pull two random waiting players
-    const a = queue.splice(crypto.randomInt(queue.length), 1)[0];
-    const b = queue.splice(crypto.randomInt(queue.length), 1)[0];
-    startGame(a, b).catch((e) => console.error("startGame:", e.message));
-  }
+  for (const queue of Object.values(queues))
+    while (queue.length >= 2) {
+      // random pairing, per the spec — pull two random waiting players
+      const a = queue.splice(crypto.randomInt(queue.length), 1)[0];
+      const b = queue.splice(crypto.randomInt(queue.length), 1)[0];
+      startGame(a, b).catch((e) => console.error("startGame:", e.message));
+    }
 }
 
 function requeue(p) {
   if (!p) return;
   if (!p.inQueue && !(p.gameId && games.has(p.gameId))) {
     p.inQueue = true;
-    queue.push(p.pid);
+    queueOf(p).push(p.pid);
     send(p, { t: "queued" });
   }
   tryMatch();
@@ -262,6 +273,7 @@ async function startGame(aPid, bPid) {
   // leave during the (network-bound) deck load double-seats or traps them.
   const g = {
     id: crypto.randomUUID(),
+    mode: modeOf(pa.mode),   // both came out of the same per-mode queue
     pids: [aPid, bPid],
     seats: null,
     round: 1, totalRounds: 0,
@@ -298,6 +310,13 @@ async function startGame(aPid, bPid) {
     return;
   }
 
+  if (g.mode === "battle") {
+    g.seats = [battle.mkSeat(pa, shuffle(da)), battle.mkSeat(pb, shuffle(db))];
+    battle.initBattle(g);   // → "setup": both pick an active
+    arm(g);
+    push(g);
+    return;
+  }
   const mkSeat = (p, deck) => {
     shuffle(deck);
     const hand = deck.splice(0, Math.min(HAND_SIZE, deck.length));
@@ -310,6 +329,18 @@ async function startGame(aPid, bPid) {
   push(g);
 }
 
+// Apply a battle.js action result: false = illegal, "wait" = setup pick
+// recorded (timer keeps running for the other side), anything else advances
+// the game — re-arm the move timer, or finish on {over}.
+function applyBattle(g, r) {
+  if (r === false) return false;
+  if (r === "wait") { push(g); return true; }
+  if (r && r.over) { finish(g, null, r.over); return true; }
+  arm(g);
+  push(g);
+  return true;
+}
+
 function arm(g) {
   clearTimeout(g.timer);
   g.deadline = Date.now() + TURN_MS;
@@ -317,7 +348,8 @@ function arm(g) {
 }
 
 function autoplay(g) {
-  // the slow player forfeits the choice, not the game — random legal move
+  // the slow player forfeits the choice, not the game — a legal move is made
+  if (g.mode === "battle") { applyBattle(g, battle.autoMove(g)); return; }
   if (g.phase === "lead") {
     const s = g.seats[g.leader];
     if (!s.hand.length) return;
@@ -380,13 +412,14 @@ function advance(g) {
 }
 
 // forfeitLoser: seat index that abandoned, or null for a played-out game
-function finish(g, forfeitLoser) {
+// (battle games pass their {winner, reason} outcome as `out`)
+function finish(g, forfeitLoser, out) {
   clearTimeout(g.timer);
   g.phase = "over";
   const [a, b] = g.seats;
-  g.over = forfeitLoser != null
-    ? { winner: 1 - forfeitLoser, forfeit: true }
-    : { winner: a.wins === b.wins ? -1 : (a.wins > b.wins ? 0 : 1), forfeit: false };
+  if (forfeitLoser != null) g.over = { winner: 1 - forfeitLoser, forfeit: true, reason: "forfeit" };
+  else if (g.mode === "battle") g.over = { ...(out || battle.outcome(g, "end")), forfeit: false };
+  else g.over = { winner: a.wins === b.wins ? -1 : (a.wins > b.wins ? 0 : 1), forfeit: false, reason: "rounds" };
   push(g);
   for (const pid of g.pids) {
     const p = players.get(pid);
@@ -396,9 +429,10 @@ function finish(g, forfeitLoser) {
 }
 
 function view(g, seat) {
+  if (g.mode === "battle") return battle.view(g, seat);
   const me = g.seats[seat], op = g.seats[1 - seat];
   const v = {
-    t: "game",
+    t: "game", mode: "stats",
     round: g.round, totalRounds: g.totalRounds, phase: g.phase,
     youLead: g.leader === seat,
     deadline: g.phase === "lead" || g.phase === "follow" ? g.deadline : 0,
@@ -435,8 +469,9 @@ setInterval(() => {
     const p = players.get(pid);
     return !p || (!p.streams.size && Date.now() - p.lastSeen > GONE_MS);
   };
-  for (let i = queue.length - 1; i >= 0; i--)
-    if (gone(queue[i])) { const p = players.get(queue[i]); if (p) p.inQueue = false; queue.splice(i, 1); }
+  for (const queue of Object.values(queues))
+    for (let i = queue.length - 1; i >= 0; i--)
+      if (gone(queue[i])) { const p = players.get(queue[i]); if (p) p.inQueue = false; queue.splice(i, 1); }
   for (const g of [...games.values()])
     if (g.phase !== "over") {
       const left = g.pids.findIndex(gone);
@@ -517,6 +552,9 @@ const server = http.createServer(async (req, res) => {
       return c ? json(res, 200, c) : json(res, 502, { error: "ord gateway" });
     }
 
+    // --- the percentile scale behind HP/ATK/DEF (info sheet footer, debugging)
+    if (path === "/api/scale") return json(res, 200, SCALE);
+
     // --- wallet inscriptions by address
     if (path.startsWith("/api/addr/")) {
       const addr = decodeURIComponent(path.slice(10)).trim();
@@ -563,7 +601,11 @@ const server = http.createServer(async (req, res) => {
         return json(res, 200, { ok: true });
       }
       p.deckIds = deck;
-      if (!p.inQueue) { p.inQueue = true; queue.push(pid); }
+      if (p.inQueue && modeOf(p.mode) !== modeOf(b.mode)) {   // switched mode while waiting
+        const q = queueOf(p); const i = q.indexOf(pid); if (i >= 0) q.splice(i, 1); p.inQueue = false;
+      }
+      p.mode = modeOf(b.mode);
+      if (!p.inQueue) { p.inQueue = true; queueOf(p).push(pid); }
       send(p, { t: "queued" });
       json(res, 200, { ok: true });
       return tryMatch();
@@ -575,9 +617,19 @@ const server = http.createServer(async (req, res) => {
       const g = p && p.gameId && games.get(p.gameId);
       if (!g || g.phase === "loading") return json(res, 404, { error: "no game" });
       const seat = seatOf(g, p.pid);
-      const ok = g.phase === "lead"
-        ? doLead(g, seat, String(b.cardId || ""), String(b.field || ""), String(b.dir || ""))
-        : doFollow(g, seat, String(b.cardId || ""));
+      let ok;
+      if (g.mode === "battle") {
+        const action = String(b.action || ""), cardId = String(b.cardId || "");
+        const r = action === "active" ? (g.phase === "promote" ? battle.promote(g, seat, cardId) : battle.chooseActive(g, seat, cardId))
+          : action === "attack" ? battle.attack(g, seat)
+          : action === "swap" ? battle.swap(g, seat, cardId)
+          : false;
+        ok = applyBattle(g, r);
+      } else {
+        ok = g.phase === "lead"
+          ? doLead(g, seat, String(b.cardId || ""), String(b.field || ""), String(b.dir || ""))
+          : doFollow(g, seat, String(b.cardId || ""));
+      }
       return json(res, ok ? 200 : 409, ok ? { ok: true } : { error: "bad move" });
     }
 
@@ -585,7 +637,7 @@ const server = http.createServer(async (req, res) => {
       const b = await readBody(req);
       const p = players.get(String(b.pid || ""));
       if (p) {
-        if (p.inQueue) { p.inQueue = false; const i = queue.indexOf(p.pid); if (i >= 0) queue.splice(i, 1); }
+        if (p.inQueue) { p.inQueue = false; const q = queueOf(p); const i = q.indexOf(p.pid); if (i >= 0) q.splice(i, 1); }
         const g = p.gameId && games.get(p.gameId);
         if (g && g.phase === "loading") cancelLoading(g, seatOf(g, p.pid));
         else if (g && g.phase !== "over") finish(g, seatOf(g, p.pid));
